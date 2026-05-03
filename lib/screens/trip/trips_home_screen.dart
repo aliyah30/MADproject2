@@ -11,18 +11,42 @@ class TripsHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    // Wait for auth state to be fully restored before querying Firestore
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, authSnapshot) {
+        // Auth still resolving — show loading
+        if (authSnapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        // Not logged in — AuthGate handles this, but guard anyway
+        final user = authSnapshot.data;
+        if (user == null) {
+          return const Scaffold(
+            body: Center(child: Text('Not signed in')),
+          );
+        }
+
+        return _TripsBody(uid: user.uid);
+      },
+    );
+  }
+}
+
+class _TripsBody extends StatelessWidget {
+  final String uid;
+  const _TripsBody({required this.uid});
+
+  @override
+  Widget build(BuildContext context) {
     final firestoreService = FirestoreService();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Trips'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {}, // future: search trips
-          ),
-        ],
       ),
       body: StreamBuilder<List<TripModel>>(
         stream: firestoreService.tripsStream(uid),
@@ -32,15 +56,31 @@ class TripsHomeScreen extends StatelessWidget {
           }
 
           if (snapshot.hasError) {
+            final error = snapshot.error.toString();
+            // Silently retry on permission errors during auth token refresh
+            if (error.contains('permission-denied')) {
+              return const Center(child: CircularProgressIndicator());
+            }
             return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline,
-                      size: 48, color: Colors.red),
-                  const SizedBox(height: 8),
-                  Text('Error loading trips: ${snapshot.error}'),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline,
+                        size: 48, color: Colors.red),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Error loading trips:\n$error',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {},
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
               ),
             );
           }
@@ -57,8 +97,7 @@ class TripsHomeScreen extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             itemCount: trips.length,
             separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, i) =>
-                _TripCard(trip: trips[i]),
+            itemBuilder: (context, i) => _TripCard(trip: trips[i]),
           );
         },
       ),
@@ -75,8 +114,7 @@ class TripsHomeScreen extends StatelessWidget {
   void _openCreateTrip(BuildContext context, String uid) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-          builder: (_) => CreateTripScreen(hostUid: uid)),
+      MaterialPageRoute(builder: (_) => CreateTripScreen(hostUid: uid)),
     );
   }
 }
@@ -94,24 +132,19 @@ class _TripCard extends StatelessWidget {
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(
-            builder: (_) => TripOverviewScreen(trip: trip)),
+        MaterialPageRoute(builder: (_) => TripOverviewScreen(trip: trip)),
       ),
       child: Card(
         clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
-            // Cover image or gradient placeholder
             Container(
               height: 160,
               decoration: BoxDecoration(
-                gradient: LinearGradient(
+                gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF00897B),
-                    const Color(0xFF26A69A),
-                  ],
+                  colors: [Color(0xFF00897B), Color(0xFF26A69A)],
                 ),
                 image: trip.coverImageUrl != null
                     ? DecorationImage(
@@ -129,7 +162,6 @@ class _TripCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Status chip
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 4),
@@ -140,15 +172,12 @@ class _TripCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        isUpcoming
-                            ? '$daysLeft days away'
-                            : 'Past trip',
+                        isUpcoming ? '$daysLeft days away' : 'Past trip',
                         style: const TextStyle(
                             color: Colors.white, fontSize: 12),
                       ),
                     ),
                     const Spacer(),
-                    // Trip name
                     Text(
                       trip.name,
                       style: const TextStyle(
@@ -183,7 +212,6 @@ class _TripCard extends StatelessWidget {
                 ),
               ),
             ),
-            // Member count chip
             Positioned(
               top: 12,
               right: 12,
@@ -235,8 +263,7 @@ class _EmptyTripsView extends StatelessWidget {
             const SizedBox(height: 16),
             const Text(
               'No trips yet',
-              style:
-                  TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(

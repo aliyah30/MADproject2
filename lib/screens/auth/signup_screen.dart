@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
+import '../auth/auth_gate.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -38,8 +39,14 @@ class _SignupScreenState extends State<SignupScreen> {
         password: _passwordCtrl.text,
         displayName: _nameCtrl.text.trim(),
       );
-      // AuthGate navigates automatically
-    } on Exception catch (e) {
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const AuthGate()),
+          (route) => false,
+        );
+      }
+    } 
+    on Exception catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

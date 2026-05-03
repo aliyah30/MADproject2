@@ -1,0 +1,67 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+
+    // Is the request from a signed-in user?
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Is the requester this specific user?
+    function isUser(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    // Is the requester a member of a trip document?
+    function isTripMember(tripId) {
+      return isAuth() &&
+        request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids;
+    }
+
+    // Is the requester the host of a trip?
+    function isTripHost(tripId) {
+      return isAuth() &&
+        request.auth.uid == get(/databases/$(database)/documents/trips/$(tripId)).data.hostUid;
+    }
+
+    // ── users ─────────────────────────────────────────────────────────────────
+    // Each user can read/write only their own profile.
+    match /users/{uid} {
+      allow read:  if isAuth();           // members need to read each other's displayName/avatar
+      allow write: if isUser(uid);        // only the owner can write their profile
+    }
+
+    // ── trips ─────────────────────────────────────────────────────────────────
+    match /trips/{tripId} {
+      allow read:   if isTripMember(tripId);
+      allow create: if isAuth() &&
+                       request.resource.data.hostUid == request.auth.uid &&
+                       request.auth.uid in request.resource.data.memberUids;
+      allow update: if isTripMember(tripId);
+      allow delete: if isTripHost(tripId);
+    }
+
+    // ── activities ────────────────────────────────────────────────────────────
+    match /activities/{activityId} {
+      allow read:   if isTripMember(resource.data.tripId);
+      allow create: if isAuth() &&
+                       isTripMember(request.resource.data.tripId);
+      allow update: if isTripMember(resource.data.tripId);
+      allow delete: if isTripMember(resource.data.tripId);
+    }
+
+    // ── packingList ───────────────────────────────────────────────────────────
+    // Document ID == tripId
+    match /packingList/{tripId} {
+      allow read, write: if isTripMember(tripId);
+    }
+
+    // ── checklists ────────────────────────────────────────────────────────────
+    // Document ID == tripId
+    match /checklists/{tripId} {
+      allow read, write: if isTripMember(tripId);
+    }
+  }
+}
